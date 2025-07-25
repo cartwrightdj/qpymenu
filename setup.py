@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="qpymenu",
-    version="0.5.1",
+    version="0.6.0",
     description="A quick and simple terminal menu system with ANSI formatting and logging.",
     author="David J. Cartwright",
     author_email="davidcartwright@hotmail.com",
