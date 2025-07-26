@@ -23,3 +23,31 @@ menu = pyMenu("Example Menu")
 menu.additem(pyMenuItem("Test Item", test_function))
 menu.execute()
 ```
+
+## Defining Menus using JSON
+```json
+{
+  "name": "Main Menu",
+  "items": [
+    {
+      "type": "item",
+      "name": "Say Hello",
+      "action": "qpymenu.test_function",
+      "args": "",
+      "wait": true,
+      "threaded": false
+    },
+    {
+      "type": "submenu",
+      "name": "Utilities",
+      "items": [
+        {
+          "type": "item",
+          "name": "Show Time",
+          "action": "qpymenu.test_function"
+        }
+      ]
+    }
+  ]
+}
+```

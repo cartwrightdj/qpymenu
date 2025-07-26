@@ -23,7 +23,6 @@ import threading
 import ast
 import importlib
 
-
 from .ansi import ansi
 
 # ============================================================
@@ -255,7 +254,7 @@ class pyMenuItem():
         - Threaded execution
         - Argument prompting at runtime
         - Optional wait for keypress after execution
-        
+
     Attributes:
         - name (str): Display name of the item in the menu.
         - action (callable, optional): The function to execute when selected.
