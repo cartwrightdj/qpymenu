@@ -4,6 +4,7 @@ A simple terminal menu system with ANSI formatting, logging, and threaded action
 
 ## Features
 
+- Define Menus in JSON (new)
 - Nested menus and menu items
 - ANSI color and formatting support
 - Logs actions and displays them on the right side
@@ -13,7 +14,7 @@ A simple terminal menu system with ANSI formatting, logging, and threaded action
 ## Usage
 
 ```python
-from pymenu import pyMenu, pyMenuItem
+from qpymenu import pyMenu, pyMenuItem
 
 def test_function():
     print("Hello from test_function!")

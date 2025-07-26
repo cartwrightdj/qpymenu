@@ -13,7 +13,7 @@ A simple terminal menu system with ANSI formatting, logging, and threaded action
 ## Usage
 
 ```python
-from pymenu import pyMenu, pyMenuItem
+from qpymenu import pyMenu, pyMenuItem
 
 def test_function():
     print("Hello from test_function!")

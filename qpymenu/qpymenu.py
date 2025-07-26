@@ -53,6 +53,27 @@ from .ansi import ansi
 # Date: 2025-07-23
 # ============================================================
 class pyMenu():
+    """
+    A terminal-based menu system that supports nested menus, ANSI formatting, logging, and threaded execution of actions.
+
+    Features:
+        - Nested submenus
+        - ANSI color formatting
+        - Logging pane
+        - Threaded item execution
+        - Optional argument prompting
+
+    Example:
+        >>> main = pyMenu("Main Menu")
+        >>> item = pyMenuItem("Greet", action=lambda: print("Hello!"))
+        >>> main.additem(item)
+        >>> main.execute()
+
+    Attributes:
+        name (str): The name shown at the top of the menu.
+        items (list): Menu items.
+        current_index (int): Current selection index for navigation.
+    """
     def __init__(self, name: str = 'Main Menu'):
         self.name = name
         self.items = []
@@ -155,19 +176,53 @@ class pyMenu():
         Args:
             submenu (pyMenu): The submenu instance to add.
         """
-        submenu.parent = self
-        self.items.append(submenu)
+        if isinstance(submenu, pyMenu):
+            submenu.parent = self
+            self.items.append(submenu)
+        else:
+            raise TypeError("Submenu must be an instance of pyMenu.")
 
     @staticmethod
     def from_json(data: dict) -> 'pyMenu':
+        """
+        Creates a pyMenu instance (including nested submenus) from a JSON-like dictionary.
+
+        Args:
+            data (dict): A dictionary representing the menu structure.
+                        Expected keys: 'name', 'items', where each item has 'type' ('item' or 'submenu').
+
+        Returns:
+            pyMenu: A fully constructed pyMenu object with items and nested submenus.
+
+        Raises:
+            ValueError: If the input structure is invalid.
+        """
+        if not isinstance(data, dict):
+            raise ValueError("Expected top-level JSON to be a dictionary.")
+
         menu = pyMenu(name=data.get("name", "Menu"))
-        for entry in data.get("items", []):
-            if entry.get("type") == "item":
-                item = pyMenuItem.from_dict(entry)
-                menu.additem(item)
-            elif entry.get("type") == "submenu":
-                submenu = pyMenu.from_json(entry)
-                menu.addsubmenu(submenu)
+
+        for index, entry in enumerate(data.get("items", []), start=1):
+            if not isinstance(entry, dict):
+                print(f"[ERROR] Item {index} is not a dictionary: {entry!r}")
+                continue
+
+            entry_type = entry.get("type")
+            try:
+                if entry_type == "item":
+                    item = pyMenuItem._from_dict(entry)
+                    menu.additem(item)
+                elif entry_type == "submenu":
+                    submenu = pyMenu.from_json(entry)
+                    menu.addsubmenu(submenu)
+                else:
+                    print(f"[WARNING] Skipped unknown item type '{entry_type}' at index {index}: {entry.get('name', '?')}")
+            except Exception as e:
+                print(f"[ERROR] Failed to load item at index {index} with name '{entry.get('name', '?')}'.")
+                print(f"        Reason: {type(e).__name__}: {e}")
+                print(f"        Entry: {entry!r}")
+                continue  # Continue loading other items even if one fails
+
         return menu
 
 # ============================================================
@@ -191,20 +246,42 @@ class pyMenu():
 # Methods:
 #   - execute(): Runs the action with provided arguments and handles user prompts
 # ============================================================
-def resolve_callable(dotted_path: str):
-    module_path, func_name = dotted_path.rsplit(".", 1)
-    module = importlib.import_module(module_path)
-    return getattr(module, func_name)
-
 class pyMenuItem():
+    """
+    Represents a single menu item that can execute a callable action.
+
+    Supports:
+        - Optional arguments
+        - Threaded execution
+        - Argument prompting at runtime
+        - Optional wait for keypress after execution
+        
+    Attributes:
+        - name (str): Display name of the item in the menu.
+        - action (callable, optional): The function to execute when selected.
+        - wait (bool): If True, waits for keypress after execution.
+        - args (any): Arguments to pass to the action (None, tuple, or special "" to prompt).
+        - threaded (bool): If True, runs the action in a new thread.
+    """
+
     def __init__(self, name: str, action: callable = None, wait=True, args=None, threaded=False):
+        """
+        Initializes a new pyMenuItem.
+
+        Args:
+            name (str): Display name of the item in the menu.
+            action (callable, optional): The function to execute when selected.
+            wait (bool): If True, waits for keypress after execution.
+            args (any): Arguments to pass to the action (None, tuple, or special "" to prompt).
+            threaded (bool): If True, runs the action in a new thread.
+        """
         self.name = name
         self.action = action
         self.wait = wait
         self.args = args  # Default args or None
         self.threaded = threaded  # If True, run action in a separate thread
 
-    def execute(self):
+    def _execute(self):
         if callable(self.action):
             args = self.args
             # Only prompt for arguments if args is exactly an empty string
@@ -241,10 +318,12 @@ class pyMenuItem():
             input()
 
     @staticmethod
-    def from_dict(data: dict) -> 'pyMenuItem':
+    def _from_dict(data: dict) -> 'pyMenuItem':
         name = data["name"]
         action_path = data.get("action")
-        action = resolve_callable(action_path) if action_path else None
+        module_path, func_name = action_path.rsplit(".", 1)
+        module = importlib.import_module(module_path)
+        action = getattr(module, func_name) if action_path else None
 
         return pyMenuItem(
             name=name,

@@ -2,3 +2,4 @@
 pyproject.toml
 *.egg-info
 /README
+sandbox.py
