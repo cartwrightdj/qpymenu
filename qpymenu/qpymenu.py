@@ -132,7 +132,7 @@ class pyMenu():
                     if isinstance(selected, pyMenu):
                         current_menu = selected
                     else:
-                        selected.execute()
+                        selected._execute()
                         self._log_action(f"Executed: {selected.name}")
                 else:
                     self._log_action("Invalid selection.")
