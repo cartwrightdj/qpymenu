@@ -26,7 +26,7 @@ import inspect
 from enum import Enum
 from collections import OrderedDict
 from .ansi import ansi
-from .terminal import Terminal, read_key
+from .terminal import Terminal, StdoutRedirect, read_key
 from typing import Union, Callable
 import os
 import importlib
@@ -53,6 +53,7 @@ import importlib
 # Methods:
 #   - execute(): Runs the action with provided arguments and handles user prompts
 # ============================================================
+pyMenuStdOut = Terminal.pyMenuStdOut()
 
 class pyMenuItem():
     """
@@ -93,7 +94,7 @@ class pyMenuItem():
         self._parent = None    
 
     def execute(self):
-        Terminal.show_cursor()
+        
         if callable(self.action):
             args = self.args
             # Only prompt for arguments if args is exactly an empty string
@@ -105,8 +106,11 @@ class pyMenuItem():
                     try:
                         args = ast.literal_eval(f"({arg_input.strip()},)")
                     except Exception as e:
-                        sys.stdout.write(f"{ansi['bg_red']}Error parsing arguments: {e}\n"
-                                        "ansi['bg_cyan'] + 'Press any key to return to menu' + ansi['reset']")          
+                        sys.stdout.write(
+                                            f"{ansi['bg_red']}Error parsing arguments: {e}\n"
+                                            f"{ansi['bg_cyan']}Press any key to return to menu{ansi['reset']}"
+                                        ) 
+                        sys.stdout.flush()        
                         read_key()
                         args = ()
                         return False
@@ -114,32 +118,25 @@ class pyMenuItem():
                     args = ()
             elif args is None:
                 args = ()
-            # If args is a single value, make it a tuple
+            
             if not isinstance(args, tuple):
                 args = (args,)
-            # 0.6.3 - changed to deal with both cases, Added error handling for action execution
+            
             try:
-                if self.threaded:
-                    t = threading.Thread(target=self.action, args=args)
-                    t.start()
-                    if self.wait:
-                        t.join()
-                else:  
-                    sys.stdout = Terminal.pyMenuStdOut()                
+                with StdoutRedirect(pyMenuStdOut):                
                     self.action(*args)
-                    sys.stdout = sys.__stdout__
+                    
             except Exception as e:
-                sys.stdout.write(f"{ansi['bg_red']} Error executing action for '{self.name}': {e} {ansi['reset']}\n"
-                                        f"{ansi['bg_cyan']}'Press any key to return to menu'{ansi['reset']}")          
+                sys.stdout.write(f"{ansi['reset']}{ansi['bg_red']} Error executing action for '{self.name}': {e} {ansi['reset']}\n"
+                                        f"{ansi['bg_cyan']}'Press any key to return to menu'{ansi['reset']}")  
+                sys.stdout.flush()        
                 read_key()
-                Terminal.clear_screen()
-                return False
                 
-            if self.wait and not self.threaded:
-                sys.stdout.write(ansi['bg_cyan'] + 'Press any key to return to menu' + ansi['reset'])          
-                read_key()
-                Terminal.clear_screen()
                 return False
+             
+            sys.stdout.write(ansi['bg_cyan'] + 'Press any key to return to menu' + ansi['reset'])          
+            read_key()
+            return False
 
                
         else:
@@ -163,14 +160,10 @@ class pyMenuItem():
         col = size.columns
         row = size.lines
         
-
-        # Move cursor to feedback location and clear the line
-        sys.stdout.write(ansi["save_cursor"])  # Save cursor position 
+        
         Terminal.move_to(row,1)
-        #sys.stdout.write(f"\033[{row};{col}H")  # Move cursor
         sys.stdout.write(ansi['clear_line']  + ansi['bold'])    # Clear the line
         sys.stdout.write(message + ansi['reset'])               # Print the message
-        #sys.stdout.write(ansi["restore_cursor"] + ansi["show_cursor"])
         
         self.last_feedback = message
 
@@ -202,35 +195,10 @@ class pyMenuItem():
             threaded=data.get("threaded", False)
         )
     
-    
-    
-    
-        """
-        Print a feedback message to the terminal at the configured feedback_location.
-        Clears the line first to ensure no leftover text remains.
-
-        Parameters:
-        - message (str): The feedback message to display.
-        """
-        size = os.get_terminal_size()
-        col = size.columns
-        row = size.lines
-        
-
-        # Move cursor to feedback location and clear the line
-        sys.stdout.write(ansi["save_cursor"])  # Save cursor position 
-        Terminal.move_to(row,1)
-        #sys.stdout.write(f"\033[{row};{col}H")  # Move cursor
-        sys.stdout.write(ansi['clear_line']  + ansi['bold'])    # Clear the line
-        sys.stdout.write(message + ansi['reset'])               # Print the message
-        #sys.stdout.write(ansi["restore_cursor"] + ansi["show_cursor"])
-        sys.stdout.flush()
-        self.last_feedback = message
-
 class pyMenu():
-    def __init__(self, name: str, action=None, hotkey=None,type:str = 'V'):
+    def __init__(self, name: str,hotkey=None,type:str = 'V'):
         self.name = name
-        self.hotkey = hotkey
+        self.hotkey = hotkey[:1] if hotkey else None
         self._index = -1 # Index will be set when added to a menu
         self._items = OrderedDict()  # Use OrderedDict to maintain order of items 
         self._width = len(name)  # Width based on name length 
@@ -242,7 +210,7 @@ class pyMenu():
         self._current_menu = self
         self._active = True
     
-    def add_item(self, item: 'Union(pyMenu,pyMenuItem)'):
+    def add_item(self, item: Union['pyMenu', pyMenuItem]):
         # TODO check for overwrite
         if isinstance(item,pyMenu) or isinstance(item,pyMenuItem):
             item._index = len(self._items)
@@ -277,6 +245,14 @@ class pyMenu():
             return 1
         return len(self._items)
     
+    def _format_line(self, item, selected, width=None):
+        name = f"{item.name}{' ►' if isinstance(item,pyMenu) else ''}"
+        padded = f"{name:<{width or len(name)}}"
+        if selected:
+            return f"{ansi['reverse']}{padded}{ansi['reset']}|"
+        else:
+            return f"{ansi['bg_bright_blue']}{padded}{ansi['reset']}|"
+
     
     def _draw(self):      
         if self._type == 'H':
@@ -292,6 +268,7 @@ class pyMenu():
                     menu_text = f"{ansi['fg_green']}  {item.name} {ctrlkey}  {ansi['reset']}|"
                 x = x + len(f"  {item.name}  |")
                 sys.stdout.write(f"{menu_text}")
+                #sys.stdout.flush()
         elif self._type == 'V':
             y = self._current_menu.y
             for index, item in enumerate(self._current_menu._items.values()):
@@ -313,6 +290,7 @@ class pyMenu():
                         f"{name:<{self._current_menu._width}}|"
                         f"{ansi['reset']}"
                     )
+                sys.stdout.flush()    
                 y = y + 1
             
     def _erase(self):
@@ -447,6 +425,7 @@ class pyMenu():
                 self._current_menu.colapse_menu_tree()
                 item.execute()
                 self._current_menu = self
+                Terminal.move_to(1,1)
                 self._draw()
         return True
               
@@ -454,6 +433,7 @@ class pyMenu():
         if self._is_valid:
             if self._parent is None: Terminal.clear_screen()
             while True:
+                
                 self._current_menu._draw()
                 self.status(f'Menu: {self._current_menu.name}, Index: {self._current_menu._current_index}, Type: {self._current_menu._type} y:{self._current_menu.y} x:{self._current_menu.x}')
                 result = self._get_user_input()
@@ -499,6 +479,8 @@ class pyMenu():
     class Types():
         HorizontalBar = 'H'
         DropDown = 'V'
+
+   
 
 
 
