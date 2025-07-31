@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.abspath('..'))  # Point to your project root
 project = 'qpymenu'
 copyright = '2025, David J. Cartwright'
 author = 'David J. Cartwright'
-release = '0.6.0'
+release = '0.6.2'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration

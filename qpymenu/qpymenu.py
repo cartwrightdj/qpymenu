@@ -5,12 +5,12 @@
 # Features:
 #   - Nested menus and menu items
 #   - ANSI color and formatting support
-#   - Logs actions and displays them on the right side
+#   - Status Bar at bottom of terminal
 #   - Supports threaded execution of menu item actions
-#   - Prompts for arguments if "" is passed as args
+#   - Arguments fro Menu Item actions can be provided, or prompted for
 #
 # Usage:
-#   Define menu items and submenus, then call menu.execute()
+#   Define menu items and submenus, then call menu.activate()
 #
 # Author: David J. Cartwright davidcartwright@hotmail.com
 # Date: 2025-07-23
@@ -18,211 +18,18 @@
 # update to wait for key press after execution errors
 # ============================================================
 
-import shutil
-import threading
+import sys
 import ast
-import importlib
+import threading
+import inspect
 
+from enum import Enum
+from collections import OrderedDict
 from .ansi import ansi
-
-# ============================================================
-# pyMenu class
-#
-# A class representing a terminal menu system with ANSI formatting.
-#
-# Features:
-#   - Supports nested menus and menu items
-#   - ANSI color and formatting for menu display
-#   - Keeps a log of actions and displays them on the right side
-#   - Allows threaded execution of menu item actions
-#   - Prompts for arguments if "" is passed as args to a menu item
-#
-# Usage:
-#   Create a pyMenu instance, add pyMenuItem or pyMenu (as submenus),
-#   then call menu.execute() to start the menu loop.
-#
-# Methods:
-#   - log_action(message): Add a message to the log
-#   - draw(): Render the menu and log to the terminal
-#   - execute(): Main menu loop for user interaction
-#   - setformat(title_format, item_format): Set ANSI formatting for title/items
-#   - additem(item): Add a pyMenuItem to the menu
-#   - addsubmenu(submenu): Add a pyMenu as a submenu
-#
-# Date: 2025-07-23
-# ============================================================
-class pyMenu():
-    """
-    A terminal-based menu system that supports nested menus, ANSI formatting, logging, and threaded execution of actions.
-
-    Features:
-        - Nested submenus
-        - ANSI color formatting
-        - Logging pane
-        - Threaded item execution
-        - Optional argument prompting
-
-    Example:
-        >>> main = pyMenu("Main Menu")
-        >>> item = pyMenuItem("Greet", action=lambda: print("Hello!"))
-        >>> main.additem(item)
-        >>> main.execute()
-
-    Attributes:
-        name (str): The name shown at the top of the menu.
-        items (list): Menu items.
-        current_index (int): Current selection index for navigation.
-    """
-    def __init__(self, name: str = 'Main Menu'):
-        self.name = name
-        self.items = []
-        self.title_format = ansi["fg_bright_blue"] + ansi["bold"]
-        self.item_format = ansi["fg_bright_green"]
-        self.parent = None
-        self.log = []
-
-    def _log_action(self, message):
-        self.log.append(message)
-        if len(self.log) > 20:  # Keep last 20 logs
-            self.log.pop(0)
-
-    def _draw(self):
-        columns, rows = shutil.get_terminal_size(fallback=(80, 24))
-        menu_width = columns // 2
-        print(ansi['clear_screen'] + ansi['cursor_home'], end='')
-        # Draw menu on left
-        print(f"{self.title_format}{self.name}{ansi['reset']}")
-        print("=" * len(self.name))
-        for index, item in enumerate(self.items, start=1):
-            print(f"{index}. {item.name} ({'>>' if isinstance(item, pyMenu) else 'Action'})")
-        if self.parent:
-            print(f"{ansi['fg_bright_yellow']}0. Parent Menu: {self.parent.name}{ansi['reset']}")
-        else:
-            print(f"{ansi['fg_bright_yellow']}0. Exit{ansi['reset']}")
-        # Draw log on right
-        print(ansi['save_cursor'], end='')
-        for i, log_entry in enumerate(self.log[-rows:]):
-            print(f"\033[{i+1};{menu_width+2}H{ansi['fg_bright_cyan']}{log_entry}{ansi['reset']}")
-        print(ansi['restore_cursor'], end='')
-
-    def execute(self):
-        """
-        Starts the interactive menu loop.
-
-        This method continuously displays the current menu, waits for user input,
-        and navigates or executes based on the selection. Input of 0 returns to the
-        parent menu or exits if at the root level. Valid numbered choices execute
-        items or enter submenus.
-
-        Logs each action and handles invalid input gracefully.
-        """
-        current_menu = self
-        while True:
-            current_menu._draw()
-            try:
-                choice = int(input("Select an option: "))
-                if choice == 0:
-                    if current_menu.parent:
-                        current_menu = current_menu.parent
-                    else:
-                        self._log_action("Exited menu.")
-                        break
-                elif 1 <= choice <= len(current_menu.items):
-                    selected = current_menu.items[choice - 1]
-                    if isinstance(selected, pyMenu):
-                        current_menu = selected
-                    else:
-                        selected._execute()
-                        self._log_action(f"Executed: {selected.name}")
-                else:
-                    self._log_action("Invalid selection.")
-            except ValueError:
-                self._log_action("Invalid input.")
-    
-    def setformat(self, title_format: str = ansi["fg_bright_blue"] + ansi["bold"],
-                     item_format: str = ansi["fg_bright_green"]):
-        """
-        Sets the ANSI color format for displaying the menu title and items.
-
-        Args:
-            title_format (str): ANSI escape string for formatting the menu title.
-            item_format (str): ANSI escape string for formatting the menu items.
-        """
-        self.title_format = title_format
-        self.item_format = item_format
-    
-    def additem(self, item: 'pyMenuItem'):
-        """
-        Adds a pyMenuItem to the current menu.
-
-        Args:
-            item (pyMenuItem): The menu item to be added.
-
-        Raises:
-            TypeError: If the provided item is not an instance of pyMenuItem.
-        """
-        if isinstance(item, pyMenuItem):
-            self.items.append(item)
-        else:
-            raise TypeError("Item must be an instance of pyMenuItem.")
-        
-    def addsubmenu(self, submenu: 'pyMenu'):
-        """
-        Adds a submenu (pyMenu) to the current menu.
-
-        The submenu becomes a child of this menu, enabling nested navigation.
-
-        Args:
-            submenu (pyMenu): The submenu instance to add.
-        """
-        if isinstance(submenu, pyMenu):
-            submenu.parent = self
-            self.items.append(submenu)
-        else:
-            raise TypeError("Submenu must be an instance of pyMenu.")
-
-    @staticmethod
-    def from_json(data: dict) -> 'pyMenu':
-        """
-        Creates a pyMenu instance (including nested submenus) from a JSON-like dictionary.
-
-        Args:
-            data (dict): A dictionary representing the menu structure.
-                        Expected keys: 'name', 'items', where each item has 'type' ('item' or 'submenu').
-
-        Returns:
-            pyMenu: A fully constructed pyMenu object with items and nested submenus.
-
-        Raises:
-            ValueError: If the input structure is invalid.
-        """
-        if not isinstance(data, dict):
-            raise ValueError("Expected top-level JSON to be a dictionary.")
-
-        menu = pyMenu(name=data.get("name", "Menu"))
-
-        for index, entry in enumerate(data.get("items", []), start=1):
-            if not isinstance(entry, dict):
-                print(f"[ERROR] Item {index} is not a dictionary: {entry!r}")
-                continue
-
-            entry_type = entry.get("type")
-            try:
-                if entry_type == "item":
-                    item = pyMenuItem._from_dict(entry)
-                    menu.additem(item)
-                elif entry_type == "submenu":
-                    submenu = pyMenu.from_json(entry)
-                    menu.addsubmenu(submenu)
-                else:
-                    print(f"[WARNING] Skipped unknown item type '{entry_type}' at index {index}: {entry.get('name', '?')}")
-            except Exception as e:
-                print(f"[ERROR] Failed to load item at index {index} with name '{entry.get('name', '?')}'.")
-                print(f"        Reason: {type(e).__name__}: {e}")
-                print(f"        Entry: {entry!r}")
-                continue  # Continue loading other items even if one fails
-
-        return menu
+from .terminal import Terminal, read_key
+from typing import Union, Callable
+import os
+import importlib
 
 # ============================================================
 # pyMenuItem class
@@ -238,6 +45,7 @@ class pyMenu():
 # Args:
 #   name (str): The display name of the menu item
 #   action (callable): The function to execute when selected
+#   hotkey (str): Used for Ctrl - X execution of items
 #   wait (bool): Whether to wait for key press after execution
 #   args: Arguments to pass to the action (None, "", or tuple)
 #   threaded (bool): If True, run the action in a separate thread
@@ -245,6 +53,7 @@ class pyMenu():
 # Methods:
 #   - execute(): Runs the action with provided arguments and handles user prompts
 # ============================================================
+
 class pyMenuItem():
     """
     Represents a single menu item that can execute a callable action.
@@ -263,7 +72,7 @@ class pyMenuItem():
         - threaded (bool): If True, runs the action in a new thread.
     """
 
-    def __init__(self, name: str, action: callable = None, wait=True, args=None, threaded=False):
+    def __init__(self, name: str, hotkey: str | None = None, action: callable = None, wait=True, args=None, threaded=False):
         """
         Initializes a new pyMenuItem.
 
@@ -275,25 +84,32 @@ class pyMenuItem():
             threaded (bool): If True, runs the action in a new thread.
         """
         self.name = name
+        self.hotkey = hotkey[:1] if hotkey else None
         self.action = action
         self.wait = wait
         self.args = args  # Default args or None
         self.threaded = threaded  # If True, run action in a separate thread
+        self._index = -1
+        self._parent = None    
 
-    def _execute(self):
+    def execute(self):
+        Terminal.show_cursor()
         if callable(self.action):
             args = self.args
             # Only prompt for arguments if args is exactly an empty string
             if args == "":
-                arg_input = input(f"Enter arguments for {self.name} (comma-separated, or leave blank for none): ")
+                prompt = self._prompt_for_arguments(self.action)
+                self.status(prompt)
+                arg_input = Terminal.read_line()
                 if arg_input.strip():
                     try:
                         args = ast.literal_eval(f"({arg_input.strip()},)")
                     except Exception as e:
-                        print(f"Error parsing arguments: {e}")
-                        print(ansi['bg_cyan'] + 'Press any key to return to menu' + ansi['reset'], end='')          
-                        input()
+                        sys.stdout.write(f"{ansi['bg_red']}Error parsing arguments: {e}\n"
+                                        "ansi['bg_cyan'] + 'Press any key to return to menu' + ansi['reset']")          
+                        read_key()
                         args = ()
+                        return False
                 else:
                     args = ()
             elif args is None:
@@ -301,25 +117,79 @@ class pyMenuItem():
             # If args is a single value, make it a tuple
             if not isinstance(args, tuple):
                 args = (args,)
-            if self.threaded:
-                t = threading.Thread(target=self.action, args=args)
-                t.start()
-                if self.wait:
-                    t.join()
-            else:
-                self.action(*args)
+            # 0.6.3 - changed to deal with both cases, Added error handling for action execution
+            try:
+                if self.threaded:
+                    t = threading.Thread(target=self.action, args=args)
+                    t.start()
+                    if self.wait:
+                        t.join()
+                else:  
+                    sys.stdout = Terminal.pyMenuStdOut()                
+                    self.action(*args)
+                    sys.stdout = sys.__stdout__
+            except Exception as e:
+                sys.stdout.write(f"{ansi['bg_red']} Error executing action for '{self.name}': {e} {ansi['reset']}\n"
+                                        f"{ansi['bg_cyan']}'Press any key to return to menu'{ansi['reset']}")          
+                read_key()
+                Terminal.clear_screen()
+                return False
+                
             if self.wait and not self.threaded:
-                print(ansi['bg_cyan'] + 'Press any key to return to menu' + ansi['reset'], end='')          
-                input()
+                sys.stdout.write(ansi['bg_cyan'] + 'Press any key to return to menu' + ansi['reset'])          
+                read_key()
+                Terminal.clear_screen()
+                return False
+
+               
         else:
-            print(f"Action for {self.name} is not callable.")
-            print(ansi['bg_cyan'] + 'Press any key to return to menu' + ansi['reset'], end='')          
-            input()
+            sys.stdout.write("Action for {self.name} is not callable.")
+            #self.feedback(ansi['bg_cyan'] + 'Press any key to return to menu' + ansi['reset'])   
+            sys.stdout.write("About to call input")       
+            read_key()
+            sys.stdout.write("Called input")
+        
+        return False
+
+    def status(self, message: str):
+        """
+        Print a feedback message to the terminal at the configured feedback_location.
+        Clears the line first to ensure no leftover text remains.
+
+        Parameters:
+        - message (str): The feedback message to display.
+        """
+        size = os.get_terminal_size()
+        col = size.columns
+        row = size.lines
+        
+
+        # Move cursor to feedback location and clear the line
+        sys.stdout.write(ansi["save_cursor"])  # Save cursor position 
+        Terminal.move_to(row,1)
+        #sys.stdout.write(f"\033[{row};{col}H")  # Move cursor
+        sys.stdout.write(ansi['clear_line']  + ansi['bold'])    # Clear the line
+        sys.stdout.write(message + ansi['reset'])               # Print the message
+        #sys.stdout.write(ansi["restore_cursor"] + ansi["show_cursor"])
+        
+        self.last_feedback = message
+
+    def _prompt_for_arguments(self, func: Callable) -> str:
+        """
+        Displays the argument names and type annotations for the given function.
+        
+        Args:
+            func (Callable): The function to inspect.
+        """
+        sig = inspect.signature(func)
+        prompt = f"Enter arguments for {func.__name__} " + \
+             " ".join(f"[{n}: {p.annotation or 'Any'}]" for n,p in sig.parameters.items()) + " "
+        return prompt
 
     @staticmethod
     def _from_dict(data: dict) -> 'pyMenuItem':
         name = data["name"]
-        action_path = data.get("action")
+        action_path: str = data.get("action","")
         module_path, func_name = action_path.rsplit(".", 1)
         module = importlib.import_module(module_path)
         action = getattr(module, func_name) if action_path else None
@@ -331,6 +201,306 @@ class pyMenuItem():
             wait=data.get("wait", True),
             threaded=data.get("threaded", False)
         )
+    
+    
+    
+    
+        """
+        Print a feedback message to the terminal at the configured feedback_location.
+        Clears the line first to ensure no leftover text remains.
 
-def test_function(test_arg: str = "Hello from test_function!"):
-    print(test_arg) 
+        Parameters:
+        - message (str): The feedback message to display.
+        """
+        size = os.get_terminal_size()
+        col = size.columns
+        row = size.lines
+        
+
+        # Move cursor to feedback location and clear the line
+        sys.stdout.write(ansi["save_cursor"])  # Save cursor position 
+        Terminal.move_to(row,1)
+        #sys.stdout.write(f"\033[{row};{col}H")  # Move cursor
+        sys.stdout.write(ansi['clear_line']  + ansi['bold'])    # Clear the line
+        sys.stdout.write(message + ansi['reset'])               # Print the message
+        #sys.stdout.write(ansi["restore_cursor"] + ansi["show_cursor"])
+        sys.stdout.flush()
+        self.last_feedback = message
+
+class pyMenu():
+    def __init__(self, name: str, action=None, hotkey=None,type:str = 'V'):
+        self.name = name
+        self.hotkey = hotkey
+        self._index = -1 # Index will be set when added to a menu
+        self._items = OrderedDict()  # Use OrderedDict to maintain order of items 
+        self._width = len(name)  # Width based on name length 
+        self._location = [1,1] 
+        self._current_index = -1
+        self._parent = None
+        #self._visible = False
+        self._type = type
+        self._current_menu = self
+        self._active = True
+    
+    def add_item(self, item: 'Union(pyMenu,pyMenuItem)'):
+        # TODO check for overwrite
+        if isinstance(item,pyMenu) or isinstance(item,pyMenuItem):
+            item._index = len(self._items)
+            self._items[item.name] = item 
+            self._width = max(self._width,len(item.name)+4)
+            item._parent = self
+
+    @staticmethod
+    def version() -> str:
+        """
+        Returns the version of the pyMenuItem class.
+        
+        This is useful for checking compatibility or debugging.
+        """
+        return "0.8.0"
+        
+    @property
+    def _is_valid(self):
+        return len(self._items) > 0
+    
+    @property
+    def y(self):
+        return self._location[0]
+
+    @property
+    def x(self):
+        return self._location[1]
+    
+    @property
+    def height(self):
+        if self._type == 'H':
+            return 1
+        return len(self._items)
+    
+    
+    def _draw(self):      
+        if self._type == 'H':
+            Terminal.move_to(self.y,self.x)
+            y, x = self._location
+            menu_text = ""
+            for index, item in enumerate(self._items.values()):
+                item._location = [y+1, x]
+                ctrlkey = f'     Ctrl + {self.hotkey}' if self.hotkey else ''
+                if item._index == self._current_index:
+                    menu_text = f"{ansi['reverse']}{ansi['bold']}{ansi['fg_bright_blue']}  {item.name} {ctrlkey}  {ansi['reset']}|"
+                else:
+                    menu_text = f"{ansi['fg_green']}  {item.name} {ctrlkey}  {ansi['reset']}|"
+                x = x + len(f"  {item.name}  |")
+                sys.stdout.write(f"{menu_text}")
+        elif self._type == 'V':
+            y = self._current_menu.y
+            for index, item in enumerate(self._current_menu._items.values()):
+                Terminal.move_to(y,self._current_menu._location[1]-1)
+                name = item.name 
+                if isinstance(item,pyMenu):
+                    name += "   ►"
+                    item._location = [y,self._current_menu.x + self._current_menu._width]
+
+                if item._index == self._current_menu._current_index:
+                    sys.stdout.write(
+                        f"{ansi['reverse']}{ansi['fg_white']}{ansi['bg_blue']}| "
+                        f"{name:<{self._current_menu._width}}|"
+                        f"{ansi['reset']}"
+                    )
+                else:                
+                    sys.stdout.write(
+                        f"{ansi['bg_bright_blue']}| "
+                        f"{name:<{self._current_menu._width}}|"
+                        f"{ansi['reset']}"
+                    )
+                y = y + 1
+            
+    def _erase(self):
+
+        
+        """
+        Clears the full menu area where draw() will paint.
+        """
+        row_start = self._location[0] 
+        col_start = self._location[1] -1
+        # include the trailing '|' and bottom border
+        col_end = col_start + self._width + 2  
+
+        for y in range(row_start, row_start + self.height + 1):
+            Terminal.clear_region(y, col_start, col_end)
+        self._current_index = -1
+
+    def colapse_menu_tree(self):
+        if self._parent is not None:
+            self._erase()
+            self._parent.colapse_menu_tree()
+        #self._current_menu = self
+        #self._current_index = 0
+
+    def _get_user_input(self):
+        """
+        Reads keypresses and returns a list of raw bytes.
+        Handles arrow keys (two‑byte sequences) and normal keys.
+        """
+        return read_key()
+
+    def _get_current_item(self):
+        item: pyMenu = self._current_menu._items.get(list(self._current_menu._items.keys())[self._current_menu._current_index],None)  # type: ignore
+        if self._current_index == -1:
+            return None
+        return item
+    
+    def _dec_current_index(self) -> bool:
+        """
+        Decriments the 'current_index' property. If index drops below 0, dispose of menu
+
+        Returns pyMenu
+        """
+        
+        current_index = self._current_index
+        if current_index <= 0 and self._type == 'V':
+            return False
+        if current_index <= 0 and self._type == 'H':
+            self._current_index = 0
+            return True
+        else:
+            self._current_index = current_index - 1
+        return True
+    
+    def _inc_current_index(self) -> None: # type: ignore
+        """
+        Decriments the 'current_index' property. If index drops below 0, dispose of menu
+
+        Returns current or parent menu
+        """
+        current_index = self._current_index
+        if current_index < len(self._items)-1:
+            self._current_index = current_index + 1
+
+    def _on_up(self):
+        if self._current_menu._type == 'H':
+            pass
+        else:
+            if not self._current_menu._dec_current_index():
+                self._current_menu._erase()
+                self._current_menu = self._current_menu._parent
+            else:
+                self._current_menu._draw()
+        
+        return True
+    
+    def _on_down(self):
+        if self._current_menu._type == 'H':
+            item = self._get_current_item()
+            if item and item._is_valid:
+                self._current_menu = item
+                item._draw()
+        else:
+            self.status(f'Current Menu: {self._current_menu.name}')
+            self._current_menu._inc_current_index()
+            self._current_menu._draw()
+
+        
+        
+        return True
+
+    def _on_left(self):
+        if self._current_menu._type == 'H':
+            self._current_menu._dec_current_index()
+        elif self._current_menu._type == 'V':
+            if self._current_menu._current_index == 0 or self._current_menu._current_index == -1:
+                self._current_menu._current_index = -1
+                self._current_menu._erase()
+                self._current_menu = self._current_menu._parent
+        return True
+
+    def _on_right(self):
+        if self._current_menu._type == 'H':
+            self._current_menu._inc_current_index()
+        else:
+             
+            item = self._get_current_item()
+            
+            if self._current_menu._current_index == -1:
+                self._current_menu._current_index = 0
+            elif isinstance(item,pyMenu) and item._is_valid:
+                item._draw()
+                self._current_menu = item 
+        return True
+
+    def _on_enter(self):
+        if self._current_menu._type == 'H':
+            item = self._get_current_item()
+            if item and item._is_valid:
+                self._current_menu = item
+                item._draw()
+        else:
+             
+            item = self._get_current_item()
+            
+            if self._current_menu._current_index == -1:
+                self._current_menu._current_index = 0
+            elif isinstance(item,pyMenu) and item._is_valid:
+                item._draw()
+                self._current_menu = item 
+            elif isinstance(item,pyMenuItem):
+                self._current_menu.colapse_menu_tree()
+                item.execute()
+                self._current_menu = self
+                self._draw()
+        return True
+              
+    def show(self):
+        if self._is_valid:
+            if self._parent is None: Terminal.clear_screen()
+            while True:
+                self._current_menu._draw()
+                self.status(f'Menu: {self._current_menu.name}, Index: {self._current_menu._current_index}, Type: {self._current_menu._type} y:{self._current_menu.y} x:{self._current_menu.x}')
+                result = self._get_user_input()
+                
+                if result == "UP":
+                    self._on_up()
+                             
+                elif result == "RIGHT":
+                    self._on_right()
+                           
+                elif result == "LEFT":
+                    self._on_left()
+                                
+                elif result == "DOWN":
+                    self._on_down()
+                         
+                elif result == 'ENTER':
+                    self._on_enter()
+                                             
+    def status(self, message: str):
+        """
+        Print a feedback message to the terminal at the configured feedback_location.
+        Clears the line first to ensure no leftover text remains.
+
+        Parameters:
+        - message (str): The feedback message to display.
+        """
+        size = os.get_terminal_size()
+        col = size.columns
+        row = size.lines
+        
+
+        # Move cursor to feedback location and clear the line
+        sys.stdout.write(ansi["save_cursor"])  # Save cursor position 
+        Terminal.move_to(row,1)
+        #sys.stdout.write(f"\033[{row};{col}H")  # Move cursor
+        sys.stdout.write(ansi['clear_line']  + ansi['bold'])    # Clear the line
+        sys.stdout.write(message + ansi['reset'])               # Print the message
+        #sys.stdout.write(ansi["restore_cursor"] + ansi["show_cursor"])
+        
+        self.last_feedback = message
+
+    class Types():
+        HorizontalBar = 'H'
+        DropDown = 'V'
+
+
+
+            
+

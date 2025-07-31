@@ -1,8 +1,8 @@
-qPyMenu (0.6.0) package 
+qPyMenu (0.6.3) package 
 =======================
 
 
-qpymenu.qpymenu module
+qpymenu module
 ----------------------
 
 .. automodule:: qpymenu.qpymenu
@@ -10,10 +10,4 @@ qpymenu.qpymenu module
    :show-inheritance:
    :undoc-members: 
 
-Module contents
----------------
 
-.. automodule:: qpymenu
-   :members:
-   :show-inheritance:
-   :undoc-members: 

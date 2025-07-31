@@ -9,3 +9,5 @@ menu.additem(pyMenuItem("Test Item", test_function))
 
 if __name__ == "__main__":
     menu.execute()
+
+ 
